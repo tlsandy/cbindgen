@@ -377,7 +377,7 @@ impl Source for Struct {
             }
         }
 
-        if config.language == Language::Cxx || config.style.generate_tag() {
+        if (config.language == Language::Cxx || config.language == Language::CS) || config.style.generate_tag() {
             write!(out, " {}", self.export_name());
         }
 
@@ -394,7 +394,7 @@ impl Source for Struct {
             out.write_vertical_source_list(&vec[..], ListType::Cap(";"));
         }
 
-        if config.language == Language::Cxx {
+        if config.language == Language::Cxx || config.language == Language::CS {
             let mut wrote_start_newline = false;
 
             if config.structure.derive_constructor(&self.annotations) && !self.fields.is_empty() {
@@ -585,7 +585,7 @@ impl Source for Struct {
             out.write_raw_block(body);
         }
 
-        if config.language == Language::Cxx
+        if (config.language == Language::Cxx || config.language == Language::CS)
             && config.structure.associated_constants_in_body
             && config.constant.allow_static_const
         {

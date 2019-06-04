@@ -35,6 +35,8 @@ fn apply_config_overrides<'a>(config: &mut Config, matches: &ArgMatches<'a>) {
             "c++" => Language::Cxx,
             "C" => Language::C,
             "c" => Language::C,
+            "C#" => Language::CS,
+            "c#" => Language::CS,
             _ => {
                 error!("Unknown language specified.");
                 return;
@@ -143,7 +145,7 @@ fn main() {
                 .long("lang")
                 .value_name("LANGUAGE")
                 .help("Specify the language to output bindings in")
-                .possible_values(&["c++", "C++", "c", "C"]),
+                .possible_values(&["c++", "C++", "c", "C", "c#", "C#"]),
         )
         .arg(
             Arg::with_name("cpp-compat")

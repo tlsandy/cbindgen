@@ -486,18 +486,49 @@ impl Item for Enum {
     }
 }
 
+#[cfg(target_pointer_width = "32")]
+fn map_prim_cs(x: ReprType) -> &'static str {
+    match x {
+        ReprType::USize => "uint",
+        ReprType::U32 => "uint",
+        ReprType::U16 => "ushort",
+        ReprType::U8 => "byte",
+        ReprType::ISize => "int",
+        ReprType::I32 => "int",
+        ReprType::I16 => "short",
+        ReprType::I8 => "sbyte",
+    }
+}
+
+#[cfg(target_pointer_width = "64")]
+fn map_prim_cs(x: ReprType) -> &'static str {
+    match x {
+        ReprType::USize => "ulong",
+        ReprType::U32 => "uint",
+        ReprType::U16 => "ushort",
+        ReprType::U8 => "byte",
+        ReprType::ISize => "long",
+        ReprType::I32 => "int",
+        ReprType::I16 => "short",
+        ReprType::I8 => "sbyte",
+    }
+}
+
 impl Source for Enum {
     fn write<F: Write>(&self, config: &Config, out: &mut SourceWriter<F>) {
-        let size = self.repr.ty.map(|ty| match ty {
-            ReprType::USize => "uintptr_t",
-            ReprType::U32 => "uint32_t",
-            ReprType::U16 => "uint16_t",
-            ReprType::U8 => "uint8_t",
-            ReprType::ISize => "intptr_t",
-            ReprType::I32 => "int32_t",
-            ReprType::I16 => "int16_t",
-            ReprType::I8 => "int8_t",
-        });
+        let size = match config.language {
+            Language::Cxx | Language::C => self.repr.ty.map(|ty| match ty {
+                ReprType::USize => "uintptr_t",
+                ReprType::U32 => "uint32_t",
+                ReprType::U16 => "uint16_t",
+                ReprType::U8 => "uint8_t",
+                ReprType::ISize => "intptr_t",
+                ReprType::I32 => "int32_t",
+                ReprType::I16 => "int16_t",
+                ReprType::I8 => "int8_t",
+            }),
+            Language::CS => self.repr.ty.map(map_prim_cs)
+        };
 
         let condition = (&self.cfg).to_condition(config);
 
@@ -510,7 +541,7 @@ impl Source for Enum {
 
         // If tagged, we need to emit a proper struct/union wrapper around our enum
         self.generic_params.write(config, out);
-        if is_tagged && config.language == Language::Cxx {
+        if is_tagged && (config.language == Language::Cxx || config.language == Language::CS) {
             out.write(if separate_tag { "struct" } else { "union" });
 
             if self.annotations.must_use {
@@ -553,7 +584,12 @@ impl Source for Enum {
                 }
             }
         } else {
-            out.write("enum class");
+            if config.language == Language::CS {
+                out.write("enum");
+            }
+            else {
+                out.write("enum class");
+            }
 
             if self.annotations.must_use {
                 if let Some(ref anno) = config.enumeration.must_use {
@@ -636,7 +672,7 @@ impl Source for Enum {
 
             // C++ allows accessing only common initial sequence of union
             // branches so we need to wrap tag into an anonymous struct
-            let wrap_tag = config.language == Language::Cxx && !separate_tag;
+            let wrap_tag = (config.language == Language::Cxx || config.language == Language::CS) && !separate_tag;
 
             if wrap_tag {
                 out.write("struct");
@@ -684,7 +720,7 @@ impl Source for Enum {
 
             // Emit convenience methods
             let derive_helper_methods = config.enumeration.derive_helper_methods(&self.annotations);
-            if config.language == Language::Cxx && derive_helper_methods {
+            if (config.language == Language::Cxx || config.language == Language::CS) && derive_helper_methods {
                 for variant in &self.variants {
                     out.new_line();
                     out.new_line();
@@ -770,7 +806,7 @@ impl Source for Enum {
 
             let derive_const_casts = config.enumeration.derive_const_casts(&self.annotations);
             let derive_mut_casts = config.enumeration.derive_mut_casts(&self.annotations);
-            if config.language == Language::Cxx
+            if (config.language == Language::Cxx || config.language == Language::CS)
                 && derive_helper_methods
                 && (derive_const_casts || derive_mut_casts)
             {
@@ -843,7 +879,7 @@ impl Source for Enum {
                 String::from("other")
             };
 
-            if config.language == Language::Cxx
+            if (config.language == Language::Cxx || config.language == Language::CS)
                 && self.can_derive_eq()
                 && config.structure.derive_eq(&self.annotations)
             {
@@ -894,7 +930,7 @@ impl Source for Enum {
                 }
             }
 
-            if config.language == Language::Cxx
+            if (config.language == Language::Cxx || config.language == Language::CS)
                 && config
                     .enumeration
                     .derive_tagged_enum_destructor(&self.annotations)
@@ -923,7 +959,7 @@ impl Source for Enum {
                 out.close_brace(false);
             }
 
-            if config.language == Language::Cxx
+            if (config.language == Language::Cxx || config.language == Language::CS)
                 && config
                     .enumeration
                     .derive_tagged_enum_copy_constructor(&self.annotations)

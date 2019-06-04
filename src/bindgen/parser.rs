@@ -11,7 +11,7 @@ use syn;
 
 use bindgen::bitflags;
 use bindgen::cargo::{Cargo, PackageRef};
-use bindgen::config::MacroExpansionConfig;
+use bindgen::config::{Language,MacroExpansionConfig};
 use bindgen::error::Error;
 use bindgen::ir::{
     AnnotationSet, Cfg, Constant, Documentation, Enum, Function, GenericParams, ItemMap,
@@ -34,6 +34,7 @@ type ParseResult = Result<Parse, Error>;
 pub fn parse_src(
     src_file: &FilePath,
     macro_expansion_config: &MacroExpansionConfig,
+    lang: Language,
 ) -> ParseResult {
     let mod_name = src_file.file_stem().unwrap().to_str().unwrap();
 
@@ -52,7 +53,7 @@ pub fn parse_src(
         cache_src: HashMap::new(),
         cache_expanded_crate: HashMap::new(),
         cfg_stack: Vec::new(),
-        out: Parse::new(),
+        out: Parse::new(lang),
     };
 
     let pkg_ref = PackageRef {
@@ -79,6 +80,7 @@ pub(crate) fn parse_lib(
     expand_all_features: bool,
     expand_default_features: bool,
     expand_features: &Option<Vec<String>>,
+    lang: Language,
 ) -> ParseResult {
     let mut context = Parser {
         binding_crate_name: lib.binding_crate_name().to_owned(),
@@ -95,7 +97,7 @@ pub(crate) fn parse_lib(
         cache_src: HashMap::new(),
         cache_expanded_crate: HashMap::new(),
         cfg_stack: Vec::new(),
-        out: Parse::new(),
+        out: Parse::new(lang),
     };
 
     let binding_crate = context.lib.as_ref().unwrap().binding_crate_ref();
@@ -387,10 +389,11 @@ pub struct Parse {
     pub opaque_items: ItemMap<OpaqueItem>,
     pub typedefs: ItemMap<Typedef>,
     pub functions: Vec<Function>,
+    pub language: Language,
 }
 
 impl Parse {
-    pub fn new() -> Parse {
+    pub fn new(lang: Language) -> Parse {
         Parse {
             constants: ItemMap::new(),
             globals: ItemMap::new(),
@@ -400,6 +403,7 @@ impl Parse {
             opaque_items: ItemMap::new(),
             typedefs: ItemMap::new(),
             functions: Vec::new(),
+            language: lang,
         }
     }
 
@@ -654,6 +658,7 @@ impl Parse {
                 &item.expr,
                 &item.attrs,
                 Some(impl_path.clone()),
+                self.language,
             ) {
                 Ok(constant) => {
                     info!("Take {}::{}::{}.", crate_name, impl_path, &item.ident);
@@ -701,7 +706,7 @@ impl Parse {
         }
 
         let path = Path::new(item.ident.to_string());
-        match Constant::load(path, mod_cfg, &item.ty, &item.expr, &item.attrs, None) {
+        match Constant::load(path, mod_cfg, &item.ty, &item.expr, &item.attrs, None, self.language) {
             Ok(constant) => {
                 info!("Take {}::{}.", crate_name, &item.ident);
 

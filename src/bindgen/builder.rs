@@ -288,14 +288,14 @@ impl Builder {
     }
 
     pub fn generate(self) -> Result<Bindings, Error> {
-        let mut result = Parse::new();
+        let mut result = Parse::new(self.config.language);
 
         if self.std_types {
             result.add_std_types();
         }
 
         for x in &self.srcs {
-            result.extend_with(&parser::parse_src(x, &self.config.macro_expansion)?);
+            result.extend_with(&parser::parse_src(x, &self.config.macro_expansion, self.config.language)?);
         }
 
         if let Some((lib_dir, binding_lib_name)) = self.lib.clone() {
@@ -329,6 +329,7 @@ impl Builder {
                 self.config.parse.expand.all_features,
                 self.config.parse.expand.default_features,
                 &self.config.parse.expand.features,
+                self.config.language,
             )?);
         } else if let Some(cargo) = self.lib_cargo.clone() {
             result.extend_with(&parser::parse_lib(
@@ -341,6 +342,7 @@ impl Builder {
                 self.config.parse.expand.all_features,
                 self.config.parse.expand.default_features,
                 &self.config.parse.expand.features,
+                self.config.language,
             )?);
         }
 

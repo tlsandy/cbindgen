@@ -4,6 +4,7 @@
 
 use std::io::Write;
 
+use bindgen::config::Language;
 use bindgen::declarationtyperesolver::DeclarationType;
 use bindgen::ir::{Function, Type};
 use bindgen::writer::{ListType, SourceWriter};
@@ -49,29 +50,29 @@ impl CDecl {
         }
     }
 
-    fn from_type(t: &Type) -> CDecl {
+    fn from_type(t: &Type, lang: Language) -> CDecl {
         let mut cdecl = CDecl::new();
-        cdecl.build_type(t, false);
+        cdecl.build_type(t, false, lang);
         cdecl
     }
-    fn from_func(f: &Function, layout_vertical: bool) -> CDecl {
+    fn from_func(f: &Function, layout_vertical: bool, lang: Language) -> CDecl {
         let mut cdecl = CDecl::new();
-        cdecl.build_func(f, layout_vertical);
+        cdecl.build_func(f, layout_vertical, lang);
         cdecl
     }
 
-    fn build_func(&mut self, f: &Function, layout_vertical: bool) {
+    fn build_func(&mut self, f: &Function, layout_vertical: bool, lang: Language) {
         let args = f
             .args
             .iter()
-            .map(|&(ref arg_name, ref arg_ty)| (Some(arg_name.clone()), CDecl::from_type(arg_ty)))
+            .map(|&(ref arg_name, ref arg_ty)| (Some(arg_name.clone()), CDecl::from_type(arg_ty, lang)))
             .collect();
         self.declarators
             .push(CDeclarator::Func(args, layout_vertical));
-        self.build_type(&f.ret, false);
+        self.build_type(&f.ret, false, lang);
     }
 
-    fn build_type(&mut self, t: &Type, is_const: bool) {
+    fn build_type(&mut self, t: &Type, is_const: bool, lang: Language) {
         match t {
             &Type::Path(ref generic) => {
                 if is_const {
@@ -112,38 +113,38 @@ impl CDecl {
                     "error generating cdecl for {:?}",
                     t
                 );
-                self.type_name = p.to_string();
+                self.type_name = p.to_repr(lang).to_owned();
             }
 
             &Type::ConstPtr(ref t) => {
                 self.declarators.push(CDeclarator::Ptr(is_const));
-                self.build_type(t, true);
+                self.build_type(t, true, lang);
             }
             &Type::Ptr(ref t) => {
                 self.declarators.push(CDeclarator::Ptr(is_const));
-                self.build_type(t, false);
+                self.build_type(t, false, lang);
             }
             &Type::Ref(ref t) => {
                 self.declarators.push(CDeclarator::Ref);
-                self.build_type(t, true);
+                self.build_type(t, true, lang);
             }
             &Type::MutRef(ref t) => {
                 self.declarators.push(CDeclarator::Ref);
-                self.build_type(t, false);
+                self.build_type(t, false, lang);
             }
             &Type::Array(ref t, ref constant) => {
                 let len = constant.as_str().to_owned();
                 self.declarators.push(CDeclarator::Array(len));
-                self.build_type(t, is_const);
+                self.build_type(t, is_const, lang);
             }
             &Type::FuncPtr(ref ret, ref args) => {
                 let args = args
                     .iter()
-                    .map(|(ref name, ref ty)| (name.clone(), CDecl::from_type(ty)))
+                    .map(|(ref name, ref ty)| (name.clone(), CDecl::from_type(ty, lang)))
                     .collect();
                 self.declarators.push(CDeclarator::Ptr(false));
                 self.declarators.push(CDeclarator::Func(args, false));
-                self.build_type(ret, false);
+                self.build_type(ret, false, lang);
             }
         }
     }
@@ -153,7 +154,19 @@ impl CDecl {
         out: &mut SourceWriter<F>,
         ident: Option<&str>,
         void_prototype: bool,
+        lang: Language,
     ) {
+        let cs_array_sz = if lang == Language::CS && self.declarators.len() == 1 {
+            if let CDeclarator::Array(ref constant) = self.declarators[0] {
+                Some(constant)
+            }
+            else { None }
+        } else { None };
+
+        if let Some(x) = cs_array_sz {
+            write!(out, "[MarshalAs(UnmanagedType.ByValArray, SizeConst={})] readonly ", x);
+        }
+
         // Write the type-specifier and type-qualifier first
         if self.type_qualifers.len() != 0 {
             write!(out, "{} ", self.type_qualifers);
@@ -163,7 +176,12 @@ impl CDecl {
             write!(out, "{} ", ctype.to_str());
         }
 
-        write!(out, "{}", self.type_name);
+        if let Some(_) = cs_array_sz {
+            write!(out, "{}[]", self.type_name);
+        }
+        else {
+            write!(out, "{}", self.type_name);
+        }
 
         if !self.type_generic_args.is_empty() {
             out.write("<");
@@ -227,7 +245,9 @@ impl CDecl {
                     if last_was_pointer {
                         out.write(")");
                     }
-                    write!(out, "[{}]", constant);
+                    if lang != Language::CS {
+                        write!(out, "[{}]", constant);
+                    }
 
                     last_was_pointer = false;
                 }
@@ -252,7 +272,7 @@ impl CDecl {
                             // Convert &Option<String> to Option<&str>
                             let arg_ident = arg_ident.as_ref().map(|x| x.as_ref());
 
-                            arg_ty.write(out, arg_ident, void_prototype);
+                            arg_ty.write(out, arg_ident, void_prototype, lang);
                         }
                         out.pop_tab();
                     } else {
@@ -264,7 +284,7 @@ impl CDecl {
                             // Convert &Option<String> to Option<&str>
                             let arg_ident = arg_ident.as_ref().map(|x| x.as_ref());
 
-                            arg_ty.write(out, arg_ident, void_prototype);
+                            arg_ty.write(out, arg_ident, void_prototype, lang);
                         }
                     }
                     out.write(")");
@@ -281,14 +301,15 @@ pub fn write_func<F: Write>(
     f: &Function,
     layout_vertical: bool,
     void_prototype: bool,
+    lang: Language,
 ) {
-    &CDecl::from_func(f, layout_vertical).write(out, Some(f.path().name()), void_prototype);
+    &CDecl::from_func(f, layout_vertical, lang).write(out, Some(f.path().name()), void_prototype, lang);
 }
 
-pub fn write_field<F: Write>(out: &mut SourceWriter<F>, t: &Type, ident: &str) {
-    &CDecl::from_type(t).write(out, Some(ident), false);
+pub fn write_field<F: Write>(out: &mut SourceWriter<F>, t: &Type, ident: &str, lang: Language) {
+    &CDecl::from_type(t, lang).write(out, Some(ident), false, lang);
 }
 
-pub fn write_type<F: Write>(out: &mut SourceWriter<F>, t: &Type) {
-    &CDecl::from_type(t).write(out, None, false);
+pub fn write_type<F: Write>(out: &mut SourceWriter<F>, t: &Type, lang: Language) {
+    &CDecl::from_type(t, lang).write(out, None, false, lang);
 }

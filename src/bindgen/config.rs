@@ -27,6 +27,7 @@ pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 pub enum Language {
     Cxx,
     C,
+    CS
 }
 
 impl FromStr for Language {
@@ -44,6 +45,8 @@ impl FromStr for Language {
             "C++" => Ok(Language::Cxx),
             "c" => Ok(Language::C),
             "C" => Ok(Language::C),
+            "c#" => Ok(Language::CS),
+            "C#" => Ok(Language::CS),
             _ => Err(format!("Unrecognized Language: '{}'.", s)),
         }
     }

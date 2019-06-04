@@ -14,7 +14,7 @@ use bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use bindgen::dependencies::Dependencies;
 use bindgen::ir::{
     AnnotationSet, Cfg, ConditionWrite, Documentation, GenericParams, Item, ItemContainer, Path,
-    Struct, ToCondition, Type,
+    PrimitiveType, Struct, ToCondition, Type,
 };
 use bindgen::library::Library;
 use bindgen::writer::{Source, SourceWriter};
@@ -120,11 +120,11 @@ impl Literal {
         }
     }
 
-    pub fn load(expr: &syn::Expr) -> Result<Literal, String> {
+    pub fn load(expr: &syn::Expr, lang: Language) -> Result<Literal, String> {
         match *expr {
             syn::Expr::Binary(ref bin_expr) => {
-                let l = Self::load(&bin_expr.left)?;
-                let r = Self::load(&bin_expr.right)?;
+                let l = Self::load(&bin_expr.left, lang)?;
+                let r = Self::load(&bin_expr.right, lang)?;
                 let op = match bin_expr.op {
                     syn::BinOp::Add(..) => "+",
                     syn::BinOp::Sub(..) => "-",
@@ -154,7 +154,12 @@ impl Literal {
                 ..
             }) => Ok(Literal::Expr(match value.value() as u32 {
                 0..=255 => format!("'{}'", value.value().escape_default()),
-                other_code => format!(r"L'\u{:X}'", other_code),
+                other_code => if lang == Language::CS {
+                    format!(r"'\u{:X}'", other_code)
+                }
+                else {
+                    format!(r"L'\u{:X}'", other_code)
+                },
             })),
             syn::Expr::Lit(syn::ExprLit {
                 lit: syn::Lit::Int(ref value),
@@ -201,7 +206,7 @@ impl Literal {
                         syn::Member::Unnamed(ref index) => format!("_{}", index.index),
                     };
                     let key = ident.to_string();
-                    let value = Literal::load(&field.expr)?;
+                    let value = Literal::load(&field.expr, lang)?;
                     field_pairs.push((key, value));
                 }
                 Ok(Literal::Struct {
@@ -216,7 +221,7 @@ impl Literal {
                 ref expr,
             }) => match *op {
                 UnOp::Neg(_) => {
-                    let val = Self::load(expr)?;
+                    let val = Self::load(expr, lang)?;
                     Ok(Literal::Expr(format!("-{}", val)))
                 }
                 _ => Err(format!("Unsupported Unary expression. {:?}", *op)),
@@ -256,6 +261,7 @@ impl Constant {
         expr: &syn::Expr,
         attrs: &[syn::Attribute],
         associated_to: Option<Path>,
+        lang: Language,
     ) -> Result<Constant, String> {
         let ty = Type::load(ty)?;
         let mut ty = match ty {
@@ -269,7 +275,7 @@ impl Constant {
             return Err("Unhandled const definition".to_owned());
         }
 
-        let mut lit = Literal::load(&expr)?;
+        let mut lit = Literal::load(&expr, lang)?;
 
         if let Some(ref associated_to) = associated_to {
             ty.replace_self_with(associated_to);
@@ -393,7 +399,7 @@ impl Constant {
         let associated_to_transparent = associated_to_struct.map_or(false, |s| s.is_transparent);
 
         let in_body = associated_to_struct.is_some()
-            && config.language == Language::Cxx
+            && (config.language == Language::Cxx || config.language == Language::CS)
             && config.structure.associated_constants_in_body
             && config.constant.allow_static_const
             && !associated_to_transparent;
@@ -431,15 +437,30 @@ impl Constant {
             _ => &self.value,
         };
 
-        if config.constant.allow_static_const && config.language == Language::Cxx {
-            out.write(if in_body { "inline " } else { "static " });
+        if config.constant.allow_static_const && (config.language == Language::Cxx || config.language == Language::CS) {
+            if in_body {
+                out.write("inline ");
+            }
+            else if config.language == Language::Cxx {
+                out.write("static ");
+            }
             if let Type::ConstPtr(..) = self.ty {
                 // Nothing.
             } else {
                 out.write("const ");
             }
             self.ty.write(config, out);
-            write!(out, " {} = {};", name, value)
+            if config.language == Language::CS {
+                if let Type::Primitive(PrimitiveType::Float) = self.ty {
+                    write!(out, " {} = {}f;", name, value)
+                }
+                else {
+                    write!(out, " {} = {};", name, value)        
+                }
+            }
+            else {
+                write!(out, " {} = {};", name, value)
+            }
         } else {
             write!(out, "#define {} {}", name, value)
         }

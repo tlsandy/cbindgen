@@ -2,13 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::fmt;
 use std::io::Write;
 
 use syn;
 
 use bindgen::cdecl;
-use bindgen::config::Config;
+use bindgen::config::{Config,Language};
 use bindgen::declarationtyperesolver::DeclarationTypeResolver;
 use bindgen::dependencies::Dependencies;
 use bindgen::ir::{Documentation, GenericParams, GenericPath, Path};
@@ -125,38 +124,46 @@ impl PrimitiveType {
         }
     }
 
-    pub fn to_repr_c(&self) -> &'static str {
-        match self {
-            &PrimitiveType::Void => "void",
-            &PrimitiveType::Bool => "bool",
-            &PrimitiveType::Char => "char",
-            &PrimitiveType::WChar => "wchar_t",
-            &PrimitiveType::SChar => "signed char",
-            &PrimitiveType::UChar => "unsigned char",
-            &PrimitiveType::Short => "short",
-            &PrimitiveType::Int => "int",
-            &PrimitiveType::Long => "long",
-            &PrimitiveType::LongLong => "long long",
-            &PrimitiveType::UShort => "unsigned short",
-            &PrimitiveType::UInt => "unsigned int",
-            &PrimitiveType::ULong => "unsigned long",
-            &PrimitiveType::ULongLong => "unsigned long long",
-            &PrimitiveType::USize => "uintptr_t",
-            &PrimitiveType::UInt8 => "uint8_t",
-            &PrimitiveType::UInt16 => "uint16_t",
-            &PrimitiveType::UInt32 => "uint32_t",
-            &PrimitiveType::UInt64 => "uint64_t",
-            &PrimitiveType::ISize => "intptr_t",
-            &PrimitiveType::Int8 => "int8_t",
-            &PrimitiveType::Int16 => "int16_t",
-            &PrimitiveType::Int32 => "int32_t",
-            &PrimitiveType::Int64 => "int64_t",
-            &PrimitiveType::Float => "float",
-            &PrimitiveType::Double => "double",
-            &PrimitiveType::SizeT => "size_t",
-            &PrimitiveType::SSizeT => "ssize_t",
-            &PrimitiveType::PtrDiffT => "ptrdiff_t",
-            &PrimitiveType::VaList => "va_list",
+    pub fn to_repr(&self, lang: Language) -> &'static str {
+        match lang {
+            Language::Cxx | Language::C => match self {
+                &PrimitiveType::Void => "void",
+                &PrimitiveType::Bool => "bool",
+                &PrimitiveType::Char => "char",
+                &PrimitiveType::WChar => "wchar_t",
+                &PrimitiveType::SChar => "signed char",
+                &PrimitiveType::UChar => "unsigned char",
+                &PrimitiveType::Short => "short",
+                &PrimitiveType::Int => "int",
+                &PrimitiveType::Long => "long",
+                &PrimitiveType::LongLong => "long long",
+                &PrimitiveType::UShort => "unsigned short",
+                &PrimitiveType::UInt => "unsigned int",
+                &PrimitiveType::ULong => "unsigned long",
+                &PrimitiveType::ULongLong => "unsigned long long",
+                &PrimitiveType::USize => "uintptr_t",
+                &PrimitiveType::UInt8 => "uint8_t",
+                &PrimitiveType::UInt16 => "uint16_t",
+                &PrimitiveType::UInt32 => "uint32_t",
+                &PrimitiveType::UInt64 => "uint64_t",
+                &PrimitiveType::ISize => "intptr_t",
+                &PrimitiveType::Int8 => "int8_t",
+                &PrimitiveType::Int16 => "int16_t",
+                &PrimitiveType::Int32 => "int32_t",
+                &PrimitiveType::Int64 => "int64_t",
+                &PrimitiveType::Float => "float",
+                &PrimitiveType::Double => "double",
+                &PrimitiveType::SizeT => "size_t",
+                &PrimitiveType::SSizeT => "ssize_t",
+                &PrimitiveType::PtrDiffT => "ptrdiff_t",
+                &PrimitiveType::VaList => "va_list",
+            },
+            Language::CS => match self {
+                &PrimitiveType::WChar => "char",
+                &PrimitiveType::Int8 => "sbyte",
+                &PrimitiveType::Int32 => "int",
+                _ => self.to_repr(Language::Cxx)
+            },
         }
     }
 
@@ -169,12 +176,6 @@ impl PrimitiveType {
 
     fn can_cmp_eq(&self) -> bool {
         true
-    }
-}
-
-impl fmt::Display for PrimitiveType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.to_repr_c())
     }
 }
 
@@ -695,20 +696,20 @@ impl Source for String {
 }
 
 impl Source for Type {
-    fn write<F: Write>(&self, _config: &Config, out: &mut SourceWriter<F>) {
-        cdecl::write_type(out, &self);
+    fn write<F: Write>(&self, config: &Config, out: &mut SourceWriter<F>) {
+        cdecl::write_type(out, &self, config.language);
     }
 }
 
 impl Source for (String, Type) {
-    fn write<F: Write>(&self, _config: &Config, out: &mut SourceWriter<F>) {
-        cdecl::write_field(out, &self.1, &self.0);
+    fn write<F: Write>(&self, config: &Config, out: &mut SourceWriter<F>) {
+        cdecl::write_field(out, &self.1, &self.0, config.language);
     }
 }
 
 impl Source for (String, Type, Documentation) {
     fn write<F: Write>(&self, config: &Config, out: &mut SourceWriter<F>) {
         self.2.write(config, out);
-        cdecl::write_field(out, &self.1, &self.0);
+        cdecl::write_field(out, &self.1, &self.0, config.language);
     }
 }

@@ -40,7 +40,7 @@ impl Deref for GenericParams {
 impl Source for GenericParams {
     fn write<F: Write>(&self, config: &Config, out: &mut SourceWriter<F>) {
         if !self.0.is_empty() {
-            if config.language == Language::Cxx {
+            if config.language == Language::Cxx || config.language == Language::CS {
                 out.write("template<");
                 for (i, item) in self.0.iter().enumerate() {
                     if i != 0 {

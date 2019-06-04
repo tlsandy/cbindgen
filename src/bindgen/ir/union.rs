@@ -263,7 +263,7 @@ impl Source for Union {
 
         out.write("union");
 
-        if config.language == Language::Cxx || config.style.generate_tag() {
+        if (config.language == Language::Cxx || config.language == Language::CS) || config.style.generate_tag() {
             write!(out, " {}", self.export_name);
         }
 

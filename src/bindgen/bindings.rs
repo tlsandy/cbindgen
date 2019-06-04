@@ -92,11 +92,15 @@ impl Bindings {
             out.new_line();
         }
         if let Some(ref f) = self.config.include_guard {
-            out.new_line_if_not_start();
-            write!(out, "#ifndef {}", f);
-            out.new_line();
-            write!(out, "#define {}", f);
-            out.new_line();
+            match self.config.language {
+                Language::Cxx | Language::C | Language::CS => {
+                    out.new_line_if_not_start();
+                    write!(out, "#ifndef {}", f);
+                    out.new_line();
+                    write!(out, "#define {}", f);
+                    out.new_line();
+                }
+            }
         }
         if self.config.include_version {
             out.new_line_if_not_start();
@@ -115,29 +119,36 @@ impl Bindings {
 
         out.new_line_if_not_start();
         if !self.config.no_includes {
-            if self.config.language == Language::C {
-                out.write("#include <stdarg.h>");
-                out.new_line();
-                out.write("#include <stdbool.h>");
-                out.new_line();
-                out.write("#include <stdint.h>");
-                out.new_line();
-                out.write("#include <stdlib.h>");
-                out.new_line();
-            } else {
-                out.write("#include <cstdarg>");
-                out.new_line();
-                out.write("#include <cstdint>");
-                out.new_line();
-                out.write("#include <cstdlib>");
-                out.new_line();
-                out.write("#include <new>");
-                out.new_line();
-                if self.config.enumeration.cast_assert_name.is_none()
-                    && (self.config.enumeration.derive_mut_casts
-                        || self.config.enumeration.derive_const_casts)
-                {
-                    out.write("#include <cassert>");
+            match self.config.language {
+                Language::C => {
+                    out.write("#include <stdarg.h>");
+                    out.new_line();
+                    out.write("#include <stdbool.h>");
+                    out.new_line();
+                    out.write("#include <stdint.h>");
+                    out.new_line();
+                    out.write("#include <stdlib.h>");
+                    out.new_line();
+                },
+                Language::Cxx => {
+                    out.write("#include <cstdarg>");
+                    out.new_line();
+                    out.write("#include <cstdint>");
+                    out.new_line();
+                    out.write("#include <cstdlib>");
+                    out.new_line();
+                    out.write("#include <new>");
+                    out.new_line();
+                    if self.config.enumeration.cast_assert_name.is_none()
+                        && (self.config.enumeration.derive_mut_casts
+                            || self.config.enumeration.derive_const_casts)
+                    {
+                        out.write("#include <cassert>");
+                        out.new_line();
+                    }
+                },
+                Language::CS => {
+                    out.write("using System.Runtime.InteropServices;");
                     out.new_line();
                 }
             }
@@ -164,8 +175,16 @@ impl Bindings {
             self.write_headers(&mut out);
         }
 
-        if self.config.language == Language::Cxx {
-            self.open_namespaces(&mut out);
+        match self.config.language {
+            Language::Cxx | Language::CS => self.open_namespaces(&mut out),
+            Language::C => {}
+        }
+
+        if self.config.language == Language::CS {
+            out.write("static class Imports {"); //ends: class Imports {
+            out.new_line();
+            
+            out.write("const string DLL = \".dll\";");
         }
 
         for constant in &self.constants {
@@ -207,6 +226,10 @@ impl Bindings {
             }
         }
 
+        if self.config.language == Language::CS && self.config.cpp_compat {
+            unimplemented!()
+        }
+
         if !self.functions.is_empty() || !self.globals.is_empty() {
             if self.config.language == Language::C && self.config.cpp_compat {
                 out.new_line_if_not_start();
@@ -232,6 +255,11 @@ impl Bindings {
 
             for function in &self.functions {
                 out.new_line_if_not_start();
+                if self.config.language == Language::CS {
+                    out.write("[DllImport(DLL)]");
+                    out.new_line();
+                    out.write("static extern ");
+                }
                 function.write(&self.config, &mut out);
                 out.new_line();
             }
@@ -253,18 +281,30 @@ impl Bindings {
             }
         }
 
-        if self.config.language == Language::Cxx {
-            self.close_namespaces(&mut out);
+        if self.config.language == Language::CS {
+            out.write("}"); //ends: class Imports {
+            out.new_line();
+        }
+
+        match self.config.language {
+            Language::Cxx | Language::CS => self.close_namespaces(&mut out),
+            Language::C => {}
         }
 
         if let Some(ref f) = self.config.include_guard {
-            out.new_line_if_not_start();
-            if self.config.language == Language::C {
-                write!(out, "#endif /* {} */", f);
-            } else {
-                write!(out, "#endif // {}", f);
+            match self.config.language {
+                Language::Cxx => {
+                    out.new_line_if_not_start();
+                    write!(out, "#endif // {}", f);
+                    out.new_line();
+                },
+                Language::C => {
+                    out.new_line_if_not_start();
+                    write!(out, "#endif /* {} */", f);
+                    out.new_line();
+                },
+                Language::CS => unimplemented!()
             }
-            out.new_line();
         }
         if let Some(ref f) = self.config.trailer {
             out.new_line_if_not_start();

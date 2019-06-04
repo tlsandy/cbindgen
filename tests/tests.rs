@@ -23,6 +23,9 @@ fn run_cbindgen(
             if cpp_compat {
                 command.arg("--cpp-compat");
             }
+        },
+        Language::CS => {
+            command.arg("--lang").arg("c#");
         }
     }
 
@@ -63,19 +66,33 @@ fn compile(cbindgen_output: &Path, language: Language) {
     let cc = match language {
         Language::Cxx => env::var("CXX").unwrap_or_else(|_| "g++".to_owned()),
         Language::C => env::var("CC").unwrap_or_else(|_| "gcc".to_owned()),
+        Language::CS => "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/MSBuild/Current/Bin/Roslyn/csc.exe".to_owned()
     };
 
     let mut object = cbindgen_output.to_path_buf();
-    object.set_extension("o");
+    match language {
+        Language::Cxx | Language::C => object.set_extension("o"),
+        Language::CS => object.set_extension("dll")
+    };
 
     let mut command = Command::new(cc);
-    command.arg("-D").arg("DEFINED");
-    command.arg("-c").arg(cbindgen_output);
-    command.arg("-o").arg(&object);
-    if let Language::Cxx = language {
-        // enum class is a c++11 extension which makes g++ on macos 10.14 error out
-        command.arg("-std=c++11");
+    match language {
+        Language::Cxx | Language::C => {
+            command.arg("-D").arg("DEFINED");
+            command.arg("-c").arg(cbindgen_output);
+            command.arg("-o").arg(&object);
+            if let Language::Cxx = language {
+                // enum class is a c++11 extension which makes g++ on macos 10.14 error out
+                command.arg("-std=c++11");
+            }
+        },
+        Language::CS => {
+            command.arg("-target:library");
+            command.arg(format!("-out:{}", object.to_str().unwrap()));
+            command.arg(cbindgen_output);
+        }
     }
+    
 
     println!("Running: {:?}", command);
     let out = command.output().expect("failed to compile");
@@ -116,7 +133,8 @@ fn run_compile_test(
             } else {
                 "c"
             }
-        }
+        },
+        Language::CS => "cs"
     };
 
     output.push(format!("{}.{}", name, ext));
@@ -150,6 +168,14 @@ fn test_file(cbindgen_path: &'static str, name: &'static str, filename: &'static
         Language::Cxx,
         /* cpp_compat = */ false,
         None,
+    );
+    run_compile_test(
+        cbindgen_path,
+        name,
+        &test,
+        Language::CS,
+        /* cpp_compat = */ false,
+        None
     );
 }
 
