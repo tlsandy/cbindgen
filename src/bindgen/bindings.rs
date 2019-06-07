@@ -9,7 +9,8 @@ use std::path;
 
 use bindgen::config::{Config, Language};
 use bindgen::ir::{
-    Constant, Function, ItemContainer, ItemMap, Path as BindgenPath, Static, Struct,
+    Constant, Function, ItemContainer, ItemMap, Path as BindgenPath, PrimitiveType,
+    Static, Struct, Type
 };
 use bindgen::writer::{Source, SourceWriter};
 
@@ -258,6 +259,10 @@ impl Bindings {
                 if self.config.language == Language::CS {
                     out.write("[DllImport(DLL)]");
                     out.new_line();
+                    if let Type::Primitive(PrimitiveType::Bool) = function.ret {
+                        out.write("[return:MarshalAs(UnmanagedType.I1)]");
+                        out.new_line();
+                    }
                     out.write("static extern ");
                 }
                 function.write(&self.config, &mut out);
